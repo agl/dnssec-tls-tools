@@ -1,0 +1,12 @@
+Here in can be found the beginnigs of some tools for dealing with DNSSEC/TLS.
+
+chain.py:
+generates an DNSSEC chain. For example:
+% python chain.py www.dnssec-exp.org chain
+
+gencert.c:
+builds a self-signed certificate with an embedded chain. For example:
+% ./gencert key.pem chain
+
+tlssectool.go, root.html:
+a webserver, written in Go, which helps with generating DNS records. A live example should be running on http://key.imperialviolet.org:5000/

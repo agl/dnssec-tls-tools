@@ -1,0 +1,198 @@
+<html>
+  <head>
+    <title>TLSSEC Utility Page</title>
+    <style>
+      div.step {
+        border: solid 3px gray;
+        border-radius: 10px;
+        margin-bottom: 1em;
+      }
+      td.num {
+        font-size: 5em;
+        color: #007700;
+        font-family: Georgia, serif;
+      }
+
+      #fetchError {
+        display: none;
+        color: red;
+      }
+
+      #parseError {
+        display: none;
+        color: red;
+      }
+
+      #out {
+        font-family: monospace;
+      }
+    </style>
+    <script>
+      var parse = null;
+
+      function fetchCert() {
+        var domain = document.getElementById("domain").value;
+        var req = new XMLHttpRequest();
+        document.getElementById("fetchError").style.display = "none";
+        document.getElementById("fetchButton").disabled = true;
+
+        function handler() {
+          if (this.readyState == 4) {
+            if (this.status == 200) {
+              document.getElementById("cert").value = this.responseText;
+              document.getElementById("parseButton").disabled = false;
+            } else {
+              document.getElementById("fetchError").style.display = "inline";
+              setTimeout(function() {
+                document.getElementById("fetchError").style.display = "none";
+              }, 1000);
+            }
+          }
+        }
+        req.onreadystatechange = handler;
+        req.open("GET", "fetch/" + domain);
+        req.send();
+      }
+
+      function parseCert() {
+        var cert = document.getElementById("cert").value;
+        var req = new XMLHttpRequest();
+        document.getElementById("parseError").style.display = "none";
+        document.getElementById("parseButton").disabled = true;
+
+        function handler() {
+          if (this.readyState == 4) {
+            if (this.status == 200) {
+              parse = JSON.parse(this.responseText);
+              updateOutput();
+            } else {
+              document.getElementById("parseError").style.display = "inline";
+              setTimeout(function() {
+                document.getElementById("parseError").style.display = "none";
+              }, 1000);
+            }
+          }
+        }
+        req.onreadystatechange = handler;
+        req.open("POST", "parse");
+        req.send(cert);
+      }
+
+      function updateOutput() {
+        if (document.getElementById('coverKey').checked) {
+          document.getElementById('recordTypeTXT').checked = true;
+          document.getElementById('recordTypeCERT').disabled = true;
+          document.getElementById('recordTypeTXT').disabled = true;
+        } else {
+          document.getElementById('recordTypeCERT').disabled = false;
+          document.getElementById('recordTypeTXT').disabled = false;
+        }
+
+        if (parse === null) {
+          return;
+        }
+
+        var out = "";
+        var domain = document.getElementById("domain").value;
+        if (document.getElementById('recordTypeCERT').checked) {
+          var i = 0;
+          if (document.getElementById('validYes').checked) {
+            i |= 2;
+          }
+          if (document.getElementById('hashSHA256').checked) {
+            i |= 1;
+          }
+          out = domain + ".\tIN\tCERT\tTLSFP\t0 0 " + parse.certStrings[i];
+        } else {
+          out = domain + ".\tIN\tTXT\t\"v=tls1 "
+          if (document.getElementById('hashSHA256').checked) {
+            out += "ha=sha256 ";
+          } else {
+            out += "ha=sha1 ";
+          }
+          if (document.getElementById('validYes').checked) {
+            out += "pkix= ";
+          }
+          if (document.getElementById('coverCert').checked) {
+            out += "hr=cert h=";
+            if (document.getElementById('hashSHA256').checked) {
+              out += parse.certSHA256
+            } else {
+              out += parse.certSHA1
+            }
+          } else {
+            out += "hr=pubkey ";
+            if (document.getElementById('hashSHA256').checked) {
+              out += parse.keySHA256
+            } else {
+              out += parse.keySHA1
+            }
+          }
+          out += "\"";
+        }
+
+        document.getElementById('out').innerText = out;
+      }
+    </script>
+  </head>
+
+  <body>
+    <div class="step">
+      <table><tr><td class="num">1.</td><td>
+        <p><b>Enter your domain name:</b> <input id="domain" type="text" onkeypress="document.getElementById('fetchButton').disabled=false" placeholder="www.example.com"/></p>
+      </td></tr></table>
+    </div>
+
+    <div class="step">
+      <table><tr><td class="num">2.</td><td>
+        <p><b>Paste in your certificate, or press the button to fetch it</b></p>
+        <p><input id="fetchButton" type="submit" disabled="true" value="Fetch certificate" onClick="fetchCert();"></p>
+        <p id="fetchError">Sorry! We couldn't fetch the certificate for that domain. You'll have to paste it in.</p>
+        <p><textarea id="cert" rows="30" cols="80" placeholder="-----BEGIN CERTIFICATE-----...." onChange="document.getElementById('parseButton').disabled=false" onKeyPress="document.getElementById('parseButton').disabled=false"></textarea></p>
+      </td></tr></table>
+    </div>
+
+    <div class="step">
+      <table><tr><td class="num">3.</td><td>
+        <p><b>Parse the certificate</b></p>
+        <p><input id="parseButton" type="submit" disabled="true" value="Parse Certificate" onClick="parseCert();"></p>
+        <p id="parseError">Sorry! We couldn't parse that certificate!</p>
+      </td></tr></table>
+    </div>
+
+    <div class="step">
+      <table><tr><td class="num">4.</td><td>
+        <p><b>Select the options for your record</b> (or just leave the defaults alone.)</p>
+          <table cellspacing="5em"><tr>
+            <td>
+              <b>Also perform PKIX validation?</b><br>
+              <label for="validYes">Yes</label><input type="radio" onClick="updateOutput()" name="valid" value="Yes" id="validYes"><br>
+              <label for="validNo">No</label><input type="radio" onClick="updateOutput()" checked name="valid" value="No" id="validNo">
+            </td>
+            <td>
+              <b>Hash coverage</b><br>
+              <label for="coverKey">Key</label><input type="radio" onClick="updateOutput()" checked name="cover" value="Key" id="coverKey"><br>
+              <label for="coverCert">Certificate</label><input type="radio" onClick="updateOutput()" name="cover" value="Cert" id="coverCert">
+            </td>
+            <td>
+              <b>Record type</b><br>
+              <label for="recordTypeTXT">TXT</label><input type="radio" onClick="updateOutput()" disabled checked name="recordType" value="TXT" id="recordTypeTXT"><br>
+              <label for="recordTypeCERT">CERT</label><input type="radio" onClick="updateOutput()" disabled name="recordType" value="CERT" id="recordTypeCERT">
+            </td>
+            <td>
+              <b>Hash function</b><br>
+              <label for="hashSHA1">SHA1</label><input type="radio" onClick="updateOutput()" checked name="hash" value="SHA1" id="hashSHA1"><br>
+              <label for="hashSHA256">SHA256</label><input type="radio" onClick="updateOutput()" name="hash" value="SHA256" id="hashSHA256">
+            </td>
+          </tr></table>
+      </td></tr></table>
+    </div>
+
+    <div class="step">
+      <table><tr><td class="num">5.</td><td>
+        <p><b>Install your DNS record:</b></p>
+        <p id="out"></p>
+      </td></tr></table>
+    </div>
+  </body>
+</html>
