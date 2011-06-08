@@ -1,10 +1,10 @@
-Here in can be found the beginnigs of some tools for dealing with DNSSEC/TLS.
+Here in can be found the beginnings of some tools for dealing with DNSSEC/TLS.
 
 gencaa.py:
 Outputs an example CAA record for a given public key.
 
 chain.py:
-Generates an DNSSEC chain. For example:
+Generates a DNSSEC chain. For example:
 % python chain.py www.dnssec-exp.org chain
 
 gencert.c:
