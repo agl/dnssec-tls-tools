@@ -10,7 +10,7 @@ kDSDigestTypeSHA256 = 2
 kRootKeyTag = 19036
 
 kDNSTypeCNAME = 5
-kDNSTypeTXT = 16
+kDNSTypeCAA = 257
 kDNSTypeDS = 43
 
 class DigError(Exception):
@@ -85,60 +85,23 @@ class CNAME(RR):
     else:
       self.cname = cnames[0]
 
-def parseQuotedString(t):
-  inString = False
-  quoting = False
-  r = ''
-  for c in t:
-    if not inString:
-      if c == '"':
-        inString = True
-        continue
-      elif c == ' ' or c == '\t':
-        continue
-      else:
-        return None
-    if quoting:
-      r += c
-      continue
-    if c == '\\':
-      quoting = True
-      continue
-    if c == '"':
-      inString = False
-      continue
-    r += c
-  return r
+def serialiseCAA(t):
+  return t
 
-def serialiseTXT(t):
-  out = Output()
-  while len(t) > 0:
-    piece = t[:255]
-    out.U8(len(piece))
-    out.append(piece)
-    t = t[len(piece):]
-  return out.Bytes()
-
-class TXT(RR):
+class CAA(RR):
   def __init__(self, domain):
-    super(TXT, self).__init__(domain, 'TXT')
-    txts = self.fetch()
-    self.txts = []
-    for t in txts:
-      if t.startswith('"'):
-        tt = parseQuotedString(t)
-        if tt is None:
-          raise DigError('Invalid quoted string: %s' % t)
-        self.txts.append(tt)
-      else:
-        self.txts.append(t)
-    self.txts.sort()
+    super(CAA, self).__init__(domain, 'TYPE257')
+    caas = self.fetch()
+    self.caas = []
+    for t in caas:
+      if not t.startswith('\\# '):
+        raise DigError('Got bad CAA: ' + t)
+      parts = t.split(' ', 2)
+      self.caas.append(parts[2].replace(' ', '').decode('hex'))
+    self.caas.sort()
 
   def Valid(self):
-    for t in self.txts:
-      if 'v=tls1' in t:
-        return True
-    return False
+    return len(self.caas) > 0
 
 def toDNSName(name):
   labels = name.split('.')
@@ -268,9 +231,10 @@ def buildChain(target):
     print '%s is a CNAME for %s' % (target, cname.cname)
     terminal = cname
   else:
-    terminal = TXT(target)
+    terminal = CAA(target)
     if not terminal.Valid():
-      print 'No good TXT records at %s' % target
+      print 'No good CAA records at %s' % target
+      assert(False)
 
   zoneNames = []
   t = target
@@ -383,12 +347,16 @@ def buildChain(target):
   return zones
 
 def serialiseZones(out, zones, target):
+  minExpiry = 0
+
   for z in zones:
     if not z.alreadyInZone:
       out.U8(z.entryKey)
       if not z.directKey:
         o = Output()
         z.dnsKeySig.Serialise(o)
+        if minExpiry == 0 or z.dnsKeySig.expires < minExpiry:
+          minExpiry = z.dnsKeySig.expires
         serialised = o.Bytes()
         out.U16(len(serialised))
         out.append(serialised)
@@ -422,14 +390,16 @@ def serialiseZones(out, zones, target):
 
     if z.nextZone is not None:
       out.U16(kDNSTypeDS)
-    elif type(z.terminal) == TXT:
-      out.U16(kDNSTypeTXT)
+    elif type(z.terminal) == CAA:
+      out.U16(kDNSTypeCAA)
     elif type(z.terminal) == CNAME:
       out.U16(kDNSTypeCNAME)
     else:
       assert(False)
 
     o = Output()
+    if minExpiry == 0 or z.exitRecordSig.expires < minExpiry:
+      minExpiry = z.exitRecordSig.expires
     z.exitRecordSig.Serialise(o)
     serialised = o.Bytes()
     out.U16(len(serialised))
@@ -446,17 +416,19 @@ def serialiseZones(out, zones, target):
         out.U16(len(serialised))
         out.append(serialised)
     else:
-      if type(z.terminal) == TXT:
-        txts = z.terminal.txts
-        out.U8(len(txts))
-        for t in txts:
-          serialised = serialiseTXT(t)
+      if type(z.terminal) == CAA:
+        caas = z.terminal.caas
+        out.U8(len(caas))
+        for t in caas:
+          serialised = serialiseCAA(t)
           out.U16(len(serialised))
           out.append(serialised)
       else:
         out.append(toDNSName(z.terminal.cname))
 
     print "After %s: %d bytes" % (z.name, len(out.Bytes()))
+
+  return minExpiry
 
 def spliceZones(new, old):
   i = 0
@@ -478,11 +450,14 @@ def main():
   out.U16(kRootKeyTag)
 
   previousZones = None
+  minExpiry = 0
   while True:
     zones = buildChain(target)
     if previousZones is not None:
       zones = spliceZones(zones, previousZones)
-    serialiseZones(out, zones, target)
+    expiry = serialiseZones(out, zones, target)
+    if minExpiry == 0 or expiry < minExpiry:
+      minExpiry = expiry
     if type(zones[-1].terminal) != CNAME:
       break
     target = zones[-1].terminal.cname
@@ -490,6 +465,7 @@ def main():
     previousZones = zones
 
   file(sys.argv[2], 'w+').write(out.Bytes())
+  print 'Chain expires at %s' % time.ctime(minExpiry)
 
 if __name__ == '__main__':
   main()

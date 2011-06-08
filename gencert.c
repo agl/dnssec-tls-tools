@@ -1,3 +1,9 @@
+/* This utility generates a self-signed X.509 certificate with an embedded
+ * DNSSEC chain.
+ *
+ * Usage: ./gencert <PEM private key> <DNSSEC chain file> > cert.pem
+ */
+
 #include <stdio.h>
 
 #include <openssl/asn1.h>
@@ -34,12 +40,13 @@ LoadKey(const char* filename) {
 }
 
 static int
-failure(const char* failing_func) {
+Failure(const char* failing_func) {
   fprintf(stderr, "Failure in %s:\n", failing_func);
   ERR_print_errors_fp(stderr);
   return 1;
 }
 
+/* RandInteger generates a random, 64-bit ASN.1 integer. */
 static ASN1_INTEGER*
 RandInteger() {
   BIGNUM* bn = BN_new();
@@ -62,7 +69,7 @@ RandInteger() {
 
 static int
 usage(const char* argv0) {
-  fprintf(stderr, "Usage: %s <public key file> <chain file> > cert.pem\n", argv0);
+  fprintf(stderr, "Usage: %s <private key file> <chain file> > cert.pem\n", argv0);
   return 1;
 }
 
@@ -73,42 +80,42 @@ main(int argc, char** argv) {
   const char* key_filename = argv[1];
   const char* chain_filename = argv[2];
 
-  EVP_PKEY* public_key = LoadKey(key_filename);
-  if (!public_key)
+  EVP_PKEY* private_key = LoadKey(key_filename);
+  if (!private_key)
     return 1;
 
   X509* x509 = X509_new();
   if (x509 == NULL)
-    return failure("X509_new");
+    return Failure("X509_new");
   if (!X509_set_version(x509, 3))
-    return failure("X509_set_version");
+    return Failure("X509_set_version");
 
   ASN1_INTEGER* serial = RandInteger();
   if (!serial)
-    return failure("s2i_ASN1_INTEGER");
+    return Failure("s2i_ASN1_INTEGER");
   X509_set_serialNumber(x509, serial);
 
   if (!X509_gmtime_adj(X509_get_notBefore(x509), 0))
-    return failure("X509_gmtime_adj");
+    return Failure("X509_gmtime_adj");
   if (!X509_gmtime_adj(X509_get_notAfter(x509), (long) 60*60*24*365))
-    return failure("X509_gmtime_adj");
+    return Failure("X509_gmtime_adj");
 
   X509_NAME* name = X509_NAME_new();
   if (!name)
-    return failure("X509_NAME_new");
-  if (!X509_NAME_add_entry_by_txt(name, "CN", V_ASN1_IA5STRING, "www.dnssec-exp.org", -1, -1, 0))
-    return failure("X509_NAME_add_entry_by_txt");
+    return Failure("X509_NAME_new");
+  if (!X509_NAME_add_entry_by_txt(name, "CN", V_ASN1_IA5STRING, (const unsigned char*) "DNSSEC Signed", -1, -1, 0))
+    return Failure("X509_NAME_add_entry_by_txt");
 
   X509_set_subject_name(x509, name);
   X509_set_issuer_name(x509, name);
 
-  if (!X509_set_pubkey(x509, public_key))
-    return failure("X509_set_pubkey");
+  if (!X509_set_pubkey(x509, private_key))
+    return Failure("X509_set_pubkey");
 
-  // 1.3.6.1.4.1.11129.13172
-  // (iso.org.dod.internet.private.enterprises.google.13172)
+  // 1.3.6.1.4.1.11129.2.1.4
+  // (iso.org.dod.internet.private.enterprises.google.googleSecurity.certificateExtensions.dnssecEmbeddedChain)
   static const unsigned char kChainExt[] =
-      {0x2b, 0x06, 0x01, 0x04, 0x01, 0xd6, 0x79, 0xe6, 0x74};
+      {0x2b, 0x06, 0x01, 0x04, 0x01, 0xd6, 0x79, 2, 1, 4};
   ASN1_OBJECT chain_ext_obj = {"", "", 0, sizeof(kChainExt), (unsigned char*) kChainExt, 0};
 
   FILE* chain_file = fopen(chain_filename, "r");
@@ -131,14 +138,14 @@ main(int argc, char** argv) {
   ASN1_OCTET_STRING_set(chain_string, chain_data, chain_len);
 
   X509_EXTENSION* ext = NULL;
-  if (!X509_EXTENSION_create_by_OBJ(&ext, &chain_ext_obj, 0 /* not crit */, chain_string))
-    return failure("X509_EXTENSION_create_by_OBJ");
+  if (!X509_EXTENSION_create_by_OBJ(&ext, &chain_ext_obj, 0 /* not critical */, chain_string))
+    return Failure("X509_EXTENSION_create_by_OBJ");
 
   if (!X509_add_ext(x509, ext, -1))
-    return failure("X509_add_ext");
+    return Failure("X509_add_ext");
 
-  if (!X509_sign(x509, public_key, EVP_sha1()))
-    return failure("X509_sign");
+  if (!X509_sign(x509, private_key, EVP_sha1()))
+    return Failure("X509_sign");
 
   BIO* out = BIO_new_fp(stdout, 0 /* don't close */);
   PEM_write_bio_X509(out, x509);

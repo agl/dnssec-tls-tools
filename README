@@ -1,12 +1,33 @@
 Here in can be found the beginnigs of some tools for dealing with DNSSEC/TLS.
 
+gencaa.py:
+Outputs an example CAA record for a given public key.
+
 chain.py:
-generates an DNSSEC chain. For example:
+Generates an DNSSEC chain. For example:
 % python chain.py www.dnssec-exp.org chain
 
 gencert.c:
-builds a self-signed certificate with an embedded chain. For example:
+Builds a self-signed certificate with an embedded chain. For example:
 % ./gencert key.pem chain
 
-tlssectool.go, root.html:
-a webserver, written in Go, which helps with generating DNS records. A live example should be running on http://key.imperialviolet.org:5000/
+
+Example
+-------
+
+$ openssl genrsa 1024 > privkey.pem
+$ openssl rsa -pubout -in privkey.pem > pubkey.pem
+$ python ./gencaa.py pubkey.pem
+EXAMPLE.COM. 60 IN TYPE257 \# 70 020461757468303e3039060a2b06010401d679020301060960864801650304020104200c74eed0660a58bbfb6e8639f434666ec55ed6d93404684437638e550d24ac3f020100
+
+(Put this in your DNS zone, but don't forget to change "EXAMPLE.COM." to match the actual domain name. Once this is done, and the record is public, you can do the next step. You can check the record with `dig -t type257 example.com`.)
+
+$ python ./chain.py example.com chain
+(Don't forget to change example.com to the actual domain name.)
+
+$ gcc -o gencert gencert.c -Wall -lcrypto
+$ ./gencert privkey.pem chain > cert.pem
+
+(And, to check the certificate:)
+
+$ openssl x509 -text < cert.pem | less
