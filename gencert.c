@@ -87,7 +87,7 @@ main(int argc, char** argv) {
   X509* x509 = X509_new();
   if (x509 == NULL)
     return Failure("X509_new");
-  if (!X509_set_version(x509, 3))
+  if (!X509_set_version(x509, 2)) /* actually x509v3 */
     return Failure("X509_set_version");
 
   ASN1_INTEGER* serial = RandInteger();
