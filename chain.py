@@ -60,7 +60,7 @@ class RR(object):
     self.rrsigs = []
 
   def fetch(self):
-    dig = subprocess.Popen(['dig', '@127.0.0.1', '+dnssec', '-t', self.rrtype, self.domain], stdout=subprocess.PIPE)
+    dig = subprocess.Popen(['dig', '+dnssec', '-t', self.rrtype, self.domain], stdout=subprocess.PIPE)
     (stdout, _) = dig.communicate()
     lines = [x for x in stdout.split('\n') if len(x) > 0 and x[0] != ';']
     self.digOutput = lines
