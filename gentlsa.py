@@ -1,10 +1,10 @@
-# This script spits out a CAA record that can be used to authorize a public key
+# This script spits out a TLSA record that can be used to authorize a public key
 # for HTTPS in Chrome. The at moment it's limited to RSA public keys only.
 # TODO(agl): support ECDSA public keys.
 #
 # It takes the public key and emits a record in a format that BIND understands.
 #
-# Usage: python ./gencaa.py rsa_public_key.pem
+# Usage: python ./gentlsa.py rsa_public_key.pem
 
 import sys
 import hashlib
@@ -45,16 +45,11 @@ KGz3vgkMv4tgKC8ghwIDAQAB
 
   spki = base64_data.decode('base64')
 
-  # This is a CAA 'auth' record which specifies a SHA256 hash of a
+  # This is a TLSA record which specifies a SHA256 hash of a
   # SubjectPublicKeyInfo.
-  odi = '\x30\x39\x06\x0a\x2b\x06\x01\x04\x01\xd6\x79\x02\x03\x01\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x01\x04\x20'
-  odi += hashlib.sha256(spki).digest()
-  caa = '\x02\x01\x00' # ASN.1 INTEGER 0 (port number, 0 means any)
-  caa = odi + caa
-  caa = asn1Length(len(caa)) + caa
-  caa = '\x30' + caa # ASN.1 SEQUENCE
-  caa = '\x02\x04auth' + caa
-  print 'EXAMPLE.COM. 60 IN TYPE257 \# %d %s' % (len(caa), caa.encode('hex'))
+  tlsa = '\x03\x01\x01'
+  tlsa += hashlib.sha256(spki).digest()
+  print '_443._tcp.EXAMPLE.COM. 60 IN TYPE52 \# %d %s' % (len(tlsa), tlsa.encode('hex'))
 
   print
   print "Don't forgot to change the hostname to something sensible."

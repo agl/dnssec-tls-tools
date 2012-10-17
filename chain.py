@@ -10,7 +10,7 @@ kDSDigestTypeSHA256 = 2
 kRootKeyTag = 19036
 
 kDNSTypeCNAME = 5
-kDNSTypeCAA = 257
+kDNSTypeTLSA = 52
 kDNSTypeDS = 43
 
 class DigError(Exception):
@@ -85,23 +85,23 @@ class CNAME(RR):
     else:
       self.cname = cnames[0]
 
-def serialiseCAA(t):
+def serialiseTLSA(t):
   return t
 
-class CAA(RR):
+class TLSA(RR):
   def __init__(self, domain):
-    super(CAA, self).__init__(domain, 'TYPE257')
-    caas = self.fetch()
-    self.caas = []
-    for t in caas:
+    super(TLSA, self).__init__(domain, 'TYPE52')
+    tlsa = self.fetch()
+    self.tlsa = []
+    for t in tlsa:
       if not t.startswith('\\# '):
-        raise DigError('Got bad CAA: ' + t)
+        raise DigError('Got bad TLSA: ' + t)
       parts = t.split(' ', 2)
-      self.caas.append(parts[2].replace(' ', '').decode('hex'))
-    self.caas.sort()
+      self.tlsa.append(parts[2].replace(' ', '').decode('hex'))
+    self.tlsa.sort()
 
   def Valid(self):
-    return len(self.caas) > 0
+    return len(self.tlsa) > 0
 
 def toDNSName(name):
   labels = name.split('.')
@@ -186,6 +186,7 @@ class SOA(RR):
   def __init__(self, domain):
     super(SOA, self).__init__(domain, 'SOA')
     self.fetch()
+    self.soa = None
     for l in self.digOutput:
       parts = l.split(None, 4)
       if parts[2] == 'IN' and parts[3] == 'SOA':
@@ -231,9 +232,11 @@ def buildChain(target):
     print '%s is a CNAME for %s' % (target, cname.cname)
     terminal = cname
   else:
-    terminal = CAA(target)
+    terminal = TLSA(target)
     if not terminal.Valid():
-      print 'No good CAA records at %s' % target
+      print 'No good TLSA records at %s' % target
+      if '_tcp' not in target:
+        print ' * Are you sure that you remembered to put, say, _443._tcp at the beginning of the domain? *'
       assert(False)
 
   zoneNames = []
@@ -241,6 +244,9 @@ def buildChain(target):
   print 'Zone listing for', target
   while True:
     z = SOA(t).soa
+    if z is None:
+      # BIND sometimes fails to answer SOA records for reasons unknown.
+      z = SOA('foo.' + t).soa
     zoneNames.append(z)
     print ' ', z
     if t == '.':
@@ -390,8 +396,8 @@ def serialiseZones(out, zones, target):
 
     if z.nextZone is not None:
       out.U16(kDNSTypeDS)
-    elif type(z.terminal) == CAA:
-      out.U16(kDNSTypeCAA)
+    elif type(z.terminal) == TLSA:
+      out.U16(kDNSTypeTLSA)
     elif type(z.terminal) == CNAME:
       out.U16(kDNSTypeCNAME)
     else:
@@ -416,11 +422,11 @@ def serialiseZones(out, zones, target):
         out.U16(len(serialised))
         out.append(serialised)
     else:
-      if type(z.terminal) == CAA:
-        caas = z.terminal.caas
-        out.U8(len(caas))
-        for t in caas:
-          serialised = serialiseCAA(t)
+      if type(z.terminal) == TLSA:
+        tlsa = z.terminal.tlsa
+        out.U8(len(tlsa))
+        for t in tlsa:
+          serialised = serialiseTLSA(t)
           out.U16(len(serialised))
           out.append(serialised)
       else:
