@@ -1,5 +1,7 @@
 Here in can be found the beginnings of some tools for producing DANE stapled-certificates.
 
+**Warning: this is mostly of historical interest as Chrome support has been removed.**
+
 gentlsa.py:
 Outputs an example TLSA record for a given public key.
 
