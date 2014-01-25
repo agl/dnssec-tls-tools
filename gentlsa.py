@@ -52,7 +52,7 @@ KGz3vgkMv4tgKC8ghwIDAQAB
   print '_443._tcp.EXAMPLE.COM. 60 IN TYPE52 \# %d %s' % (len(tlsa), tlsa.encode('hex'))
 
   print
-  print "Don't forgot to change the hostname to something sensible."
+  print "Don't forget to change the hostname to something sensible."
 
 if __name__ == '__main__':
   main(sys.argv)
